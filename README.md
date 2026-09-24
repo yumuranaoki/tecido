@@ -34,7 +34,6 @@ Tecido delegates as much of this infrastructure layer as possible to `celld`, in
 
 - Preserve conversations across process restarts and deployments
 - Remain self-hostable without depending on a particular managed AI or application platform
-- Keep LLM provider and runtime-specific types out of the public API
 
 ## Cloud-provider independence
 
@@ -49,7 +48,7 @@ import { agent, tool } from "tecido";
 
 const weather = tool({
   description: "Get weather information",
-  schema: WeatherSchema,
+  inputSchema: WeatherSchema,
   retry: "safe",
   execute: async ({ city }) => getWeather(city),
 });
@@ -67,7 +66,7 @@ const thread = assistant.thread({
 });
 
 const stream = await thread.stream("What's the weather in Tokyo?", {
-  idempotencyKey: request.id,
+  transactionId: request.id,
 });
 
 for await (const event of stream) {

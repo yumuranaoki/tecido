@@ -1,0 +1,23 @@
+{
+  "name": "tecido",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "ai": "^7.0.0"
+  },
+  "devDependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "ai": "^7.0.0",
+    "typescript": "^7.0.2",
+    "zod": "^4.2.0"
+  }
+}
