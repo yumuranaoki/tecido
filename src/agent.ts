@@ -1,17 +1,12 @@
 import { mapValues } from "remeda";
+import { z } from "zod/v4";
 import type { AgentSchedule, CronHandler } from "./cron.js";
 import type { LanguageModel } from "./model.js";
-import type {
-  Thread,
-  ThreadAddress,
-  ThreadId,
-  ThreadNamespace,
-} from "./thread.js";
-import type { Tool } from "./tool.js";
 import { NonEmptyStringSchema } from "./primitives.js";
-import { tool } from "./tool.js";
 import { createThread } from "./thread-runtime.js";
-import { z } from "zod/v4";
+import type { Thread, ThreadAddress, ThreadId, ThreadNamespace } from "./thread.js";
+import type { Tool } from "./tool.js";
+import { tool } from "./tool.js";
 
 /** Configuration for a statically declared Agent. */
 export interface AgentOptions {
@@ -65,9 +60,11 @@ const AgentOptionsSchema = z.object({
   instructions: z.string(),
   tools: z.record(NonEmptyStringSchema, z.unknown()).optional(),
   schedules: AgentSchedulesSchema.optional(),
-  onCron: z.custom<CronHandler>((value) => typeof value === "function", {
-    message: "Agent onCron must be a function.",
-  }).optional(),
+  onCron: z
+    .custom<CronHandler>((value) => typeof value === "function", {
+      message: "Agent onCron must be a function.",
+    })
+    .optional(),
 });
 
 const ThreadAddressSchema = z.object({
@@ -82,10 +79,7 @@ const ThreadAddressSchema = z.object({
 export function agent(options: AgentOptions): Agent {
   const agentOptions = parseAgentOptions(options);
   // The outer map is keyed by namespace; each inner map is keyed by ThreadAddress.id.
-  const threadsByNamespace = new Map<
-    ThreadNamespace,
-    Map<ThreadId, Thread>
-  >();
+  const threadsByNamespace = new Map<ThreadNamespace, Map<ThreadId, Thread>>();
 
   return {
     options: agentOptions,
@@ -97,10 +91,7 @@ export function agent(options: AgentOptions): Agent {
 
       const thread = createThread(agentOptions);
       if (threadsInNamespace === undefined) {
-        threadsByNamespace.set(
-          parsedAddress.namespace,
-          new Map([[parsedAddress.id, thread]]),
-        );
+        threadsByNamespace.set(parsedAddress.namespace, new Map([[parsedAddress.id, thread]]));
       } else {
         threadsInNamespace.set(parsedAddress.id, thread);
       }
@@ -111,14 +102,11 @@ export function agent(options: AgentOptions): Agent {
 
 function parseAgentOptions(options: unknown): AgentOptions {
   const parsed = AgentOptionsSchema.parse(options);
-  const tools = parsed.tools === undefined
-    ? undefined
-    : mapValues(parsed.tools, (declaration) =>
-        tool(declaration as Tool<any, any>),
-      );
-  const schedules = parsed.schedules === undefined
-    ? undefined
-    : parsed.schedules;
+  const tools =
+    parsed.tools === undefined
+      ? undefined
+      : mapValues(parsed.tools, (declaration) => tool(declaration as Tool<any, any>));
+  const schedules = parsed.schedules === undefined ? undefined : parsed.schedules;
 
   return {
     id: parsed.id,

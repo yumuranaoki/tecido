@@ -32,7 +32,4 @@ export interface CronContext {
  * @param event Stable schedule occurrence metadata.
  * @param context Thread access scoped to the scheduled Agent.
  */
-export type CronHandler = (
-  event: CronEvent,
-  context: CronContext,
-) => Promise<void>;
+export type CronHandler = (event: CronEvent, context: CronContext) => Promise<void>;

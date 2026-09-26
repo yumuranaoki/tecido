@@ -1,4 +1,4 @@
-import type { RunId, RunSnapshot, RetryOptions, StreamEvent } from "./run.js";
+import type { RetryOptions, RunId, RunSnapshot, StreamEvent } from "./run.js";
 import type { AcceptedRun, RuntimeThreadAddress, ThreadEvent } from "./runtime-events.js";
 
 /** Internal boundary implemented by a durable runtime host. */
@@ -9,10 +9,7 @@ export interface RuntimePort {
    * @param event Normalized message or cron event.
    * @returns Accepted Run identity and queue metadata.
    */
-  accept(
-    address: RuntimeThreadAddress,
-    event: ThreadEvent,
-  ): Promise<AcceptedRun>;
+  accept(address: RuntimeThreadAddress, event: ThreadEvent): Promise<AcceptedRun>;
 
   /**
    * Executes the next accepted item for a Thread, if one is ready.
@@ -26,10 +23,7 @@ export interface RuntimePort {
    * @param runId Identifier of the Run to read.
    * @returns The latest Run snapshot.
    */
-  readRun(
-    address: RuntimeThreadAddress,
-    runId: RunId,
-  ): Promise<RunSnapshot>;
+  readRun(address: RuntimeThreadAddress, runId: RunId): Promise<RunSnapshot>;
 
   /**
    * Reads committed stream events after an exclusive sequence cursor.
@@ -38,11 +32,7 @@ export interface RuntimePort {
    * @param afterSeq Exclusive sequence cursor.
    * @returns An async stream of durable events.
    */
-  subscribe(
-    address: RuntimeThreadAddress,
-    runId: RunId,
-    afterSeq: number,
-  ): AsyncIterable<StreamEvent>;
+  subscribe(address: RuntimeThreadAddress, runId: RunId, afterSeq: number): AsyncIterable<StreamEvent>;
 
   /**
    * Enqueues an explicit retry attempt for a failed Run.
@@ -51,11 +41,7 @@ export interface RuntimePort {
    * @param options Optional reconciliation for an uncertain Tool result.
    * @returns The updated durable Run snapshot.
    */
-  retry(
-    address: RuntimeThreadAddress,
-    runId: RunId,
-    options?: RetryOptions,
-  ): Promise<RunSnapshot>;
+  retry(address: RuntimeThreadAddress, runId: RunId, options?: RetryOptions): Promise<RunSnapshot>;
 
   /**
    * Requests durable cancellation of a Run.

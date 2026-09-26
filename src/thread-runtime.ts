@@ -1,14 +1,8 @@
-import {
-  stepCountIs,
-  streamText,
-  tool as aiTool,
-  type ModelMessage,
-  type ToolExecutionOptions,
-} from "ai";
+import { type ModelMessage, type ToolExecutionOptions, tool as aiTool, stepCountIs, streamText } from "ai";
 import { mapValues } from "remeda";
-import { match, P } from "ts-pattern";
+import { P, match } from "ts-pattern";
 import type { AgentOptions } from "./agent.js";
-import { AgentRunError, type AgentError } from "./errors.js";
+import { type AgentError, AgentRunError } from "./errors.js";
 import type { ModelUsage } from "./model.js";
 import type {
   AgentOutput,
@@ -62,9 +56,7 @@ interface ModelTurnOutput {
   readonly usage?: ModelUsage;
 }
 
-type Captured<Value> =
-  | { readonly ok: true; readonly value: Value }
-  | { readonly ok: false; readonly error: unknown };
+type Captured<Value> = { readonly ok: true; readonly value: Value } | { readonly ok: false; readonly error: unknown };
 
 type ModelTurnOutcome = Captured<ModelTurnOutput>;
 
@@ -122,11 +114,8 @@ export function createThread(options: AgentOptions): Thread {
     state.transition((current) => withRun(current, runningRun));
 
     const userMessage: ModelMessage = { role: "user", content: runningRun.input };
-    const modelOutcome = await runModelTurn(
-      options,
-      [...state.read().messages, userMessage],
-      runningRun,
-      (event) => publish(runId, event),
+    const modelOutcome = await runModelTurn(options, [...state.read().messages, userMessage], runningRun, (event) =>
+      publish(runId, event),
     );
 
     if (!modelOutcome.ok) {
@@ -141,19 +130,13 @@ export function createThread(options: AgentOptions): Thread {
     }
 
     state.transition((current) =>
-      withMessages(current, [
-        ...current.messages,
-        userMessage,
-        ...modelOutcome.value.responseMessages,
-      ]),
+      withMessages(current, [...current.messages, userMessage, ...modelOutcome.value.responseMessages]),
     );
 
     const result: RunResult = {
       runId,
       output: { text: textForAttempt(activeRun) } satisfies AgentOutput,
-      ...(modelOutcome.value.usage === undefined
-        ? {}
-        : { usage: modelOutcome.value.usage }),
+      ...(modelOutcome.value.usage === undefined ? {} : { usage: modelOutcome.value.usage }),
     };
     state.transition((current) =>
       withRun(current, {
@@ -164,9 +147,7 @@ export function createThread(options: AgentOptions): Thread {
     );
     publish(runId, {
       type: "completed",
-      ...(modelOutcome.value.usage === undefined
-        ? {}
-        : { usage: modelOutcome.value.usage }),
+      ...(modelOutcome.value.usage === undefined ? {} : { usage: modelOutcome.value.usage }),
     });
   };
 
@@ -178,20 +159,13 @@ export function createThread(options: AgentOptions): Thread {
     );
   };
 
-  const stream = async (
-    input: string,
-    runOptions?: RunOptions,
-  ): Promise<RunStream> => {
+  const stream = async (input: string, runOptions?: RunOptions): Promise<RunStream> => {
     const transactionId = runOptions?.transactionId;
-    const previous = transactionId === undefined
-      ? undefined
-      : state.read().transactions.get(transactionId);
+    const previous = transactionId === undefined ? undefined : state.read().transactions.get(transactionId);
 
     if (previous !== undefined) {
       if (previous.input !== input) {
-        throw new Error(
-          `IDEMPOTENCY_CONFLICT: transaction ${transactionId} was already used for different input.`,
-        );
+        throw new Error(`IDEMPOTENCY_CONFLICT: transaction ${transactionId} was already used for different input.`);
       }
       return runStream(readRun, previous.runId, 0);
     }
@@ -210,25 +184,15 @@ export function createThread(options: AgentOptions): Thread {
     return runStream(readRun, run.runId, 0);
   };
 
-  const waitForResult = async (
-    runId: RunId,
-    events: AsyncIterable<StreamEvent>,
-  ): Promise<RunResult> => {
+  const waitForResult = async (runId: RunId, events: AsyncIterable<StreamEvent>): Promise<RunResult> => {
     for await (const event of events) {
       const error = match(event)
-        .with({ type: "failed" }, (failed) =>
-          new AgentRunError(runId, failed.attempt, failed.type, failed.error))
-        .with({ type: "cancelled" }, (cancelled) =>
-          new AgentRunError(
-            runId,
-            cancelled.attempt,
-            cancelled.type,
-            cancelledError(),
-          ))
+        .with({ type: "failed" }, (failed) => new AgentRunError(runId, failed.attempt, failed.type, failed.error))
         .with(
-          { type: P.union("text-delta", "tool-call", "tool-result", "completed") },
-          () => undefined,
+          { type: "cancelled" },
+          (cancelled) => new AgentRunError(runId, cancelled.attempt, cancelled.type, cancelledError()),
         )
+        .with({ type: P.union("text-delta", "tool-call", "tool-result", "completed") }, () => undefined)
         .exhaustive();
 
       if (error !== undefined) throw error;
@@ -249,32 +213,21 @@ export function createThread(options: AgentOptions): Thread {
 
     stream,
 
-    getRun: async (runId: RunId): Promise<RunSnapshot> =>
-      snapshot(readRun(runId)),
+    getRun: async (runId: RunId): Promise<RunSnapshot> => snapshot(readRun(runId)),
 
-    subscribe: (
-      runId: RunId,
-      subscribeOptions?: { readonly afterSeq?: number },
-    ): AsyncIterable<StreamEvent> =>
+    subscribe: (runId: RunId, subscribeOptions?: { readonly afterSeq?: number }): AsyncIterable<StreamEvent> =>
       subscribeEvents(readRun, runId, subscribeOptions?.afterSeq ?? 0),
 
-    retry: async (
-      runId: RunId,
-      retryOptions?: RetryOptions,
-    ): Promise<RunResult> => {
+    retry: async (runId: RunId, retryOptions?: RetryOptions): Promise<RunResult> => {
       const run = readRun(runId);
       if (run.status !== "failed") {
         throw new Error(`Run ${runId} is not in a failed state.`);
       }
       if (retryOptions?.reconcile !== undefined) {
-        throw new Error(
-          "Tool reconciliation is not available in the in-memory runtime.",
-        );
+        throw new Error("Tool reconciliation is not available in the in-memory runtime.");
       }
       if (hasToolCalls(run)) {
-        throw new Error(
-          "A Run with tool calls cannot be retried by the in-memory runtime.",
-        );
+        throw new Error("A Run with tool calls cannot be retried by the in-memory runtime.");
       }
 
       const afterSeq = run.events.length;
@@ -351,10 +304,7 @@ function createRunSignal(): RunSignal {
   return { wait, notify };
 }
 
-function withMessages(
-  state: ThreadState,
-  messages: readonly ModelMessage[],
-): ThreadState {
+function withMessages(state: ThreadState, messages: readonly ModelMessage[]): ThreadState {
   return { ...state, messages };
 }
 
@@ -368,17 +318,11 @@ function withTransaction(
   transactionId: TransactionId,
   transaction: TransactionRecord,
 ): ThreadState {
-  const transactions = new Map<TransactionId, TransactionRecord>([
-    ...state.transactions,
-    [transactionId, transaction],
-  ]);
+  const transactions = new Map<TransactionId, TransactionRecord>([...state.transactions, [transactionId, transaction]]);
   return { ...state, transactions };
 }
 
-function appendRunEvent(
-  run: RunState,
-  event: NewStreamEvent,
-): { readonly run: RunState; readonly notify: () => void } {
+function appendRunEvent(run: RunState, event: NewStreamEvent): { readonly run: RunState; readonly notify: () => void } {
   const now = new Date().toISOString();
   const sequencedEvent = {
     ...event,
@@ -430,9 +374,7 @@ async function runModelTurn(
   );
   if (!modelResult.ok) return { ok: false, error: modelResult.error };
 
-  const iterator = capture(() =>
-    modelResult.value.fullStream[Symbol.asyncIterator](),
-  );
+  const iterator = capture(() => modelResult.value.fullStream[Symbol.asyncIterator]());
   if (!iterator.ok) return { ok: false, error: iterator.error };
 
   while (true) {
@@ -464,21 +406,16 @@ async function runModelTurn(
         });
         return undefined;
       })
-      .with(
-        { type: P.union("tool-error", "error") },
-        (streamError) => {
-          run.controller.abort(streamError.error);
-          return { ok: false, error: streamError.error };
-        },
-      )
+      .with({ type: P.union("tool-error", "error") }, (streamError) => {
+        run.controller.abort(streamError.error);
+        return { ok: false, error: streamError.error };
+      })
       .with({ type: "abort" }, (abort) =>
         isCancellationRequested(run)
           ? undefined
           : {
               ok: false,
-              error: new Error(
-                abort.reason ?? "The model stream was aborted.",
-              ),
+              error: new Error(abort.reason ?? "The model stream was aborted."),
             },
       )
       // SDK parts without a persisted StreamEvent representation are ignored.
@@ -519,10 +456,7 @@ async function runModelTurn(
   }
 
   const completion = await captureAsync(() =>
-    Promise.all([
-      modelResult.value.responseMessages,
-      modelResult.value.totalUsage,
-    ] as const),
+    Promise.all([modelResult.value.responseMessages, modelResult.value.totalUsage] as const),
   );
   if (!completion.ok) return { ok: false, error: completion.error };
 
@@ -544,9 +478,7 @@ function capture<Value>(operation: () => Value): Captured<Value> {
   }
 }
 
-async function captureAsync<Value>(
-  operation: () => Promise<Value>,
-): Promise<Captured<Value>> {
+async function captureAsync<Value>(operation: () => Promise<Value>): Promise<Captured<Value>> {
   try {
     return { ok: true, value: await operation() };
   } catch (error) {
@@ -554,17 +486,11 @@ async function captureAsync<Value>(
   }
 }
 
-function createModelTools(
-  declarations: Readonly<Record<string, Tool<any, any>>>,
-  run: RunState,
-) {
+function createModelTools(declarations: Readonly<Record<string, Tool<any, any>>>, run: RunState) {
   return mapValues(declarations, (declaration) => adaptTool(declaration, run));
 }
 
-function adaptTool<Schema extends Tool<any, any>>(
-  declaration: Schema,
-  run: RunState,
-) {
+function adaptTool<Schema extends Tool<any, any>>(declaration: Schema, run: RunState) {
   return aiTool({
     description: declaration.description,
     inputSchema: declaration.inputSchema,
@@ -577,15 +503,10 @@ function adaptTool<Schema extends Tool<any, any>>(
   });
 }
 
-function runStream(
-  readRun: (runId: RunId) => RunState,
-  runId: RunId,
-  afterSeq: number,
-): RunStream {
+function runStream(readRun: (runId: RunId) => RunState, runId: RunId, afterSeq: number): RunStream {
   return {
     runId,
-    [Symbol.asyncIterator]: () =>
-      subscribeEvents(readRun, runId, afterSeq)[Symbol.asyncIterator](),
+    [Symbol.asyncIterator]: () => subscribeEvents(readRun, runId, afterSeq)[Symbol.asyncIterator](),
   };
 }
 
@@ -647,9 +568,7 @@ function requireRun(state: ThreadState, runId: RunId): RunState {
 }
 
 function isTerminal(status: RunStatus): boolean {
-  return (
-    status === "completed" || status === "failed" || status === "cancelled"
-  );
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 function normalizeError(_error: unknown): AgentError {

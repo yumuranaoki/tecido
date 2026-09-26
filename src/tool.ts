@@ -1,20 +1,14 @@
-import type {
-  StandardJSONSchemaV1,
-  StandardSchemaV1,
-} from "@standard-schema/spec";
+import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 import { isPlainObject } from "remeda";
+import { z } from "zod/v4";
 import { NonEmptyStringSchema } from "./primitives.js";
 import type { RunId } from "./run.js";
-import { z } from "zod/v4";
 
 /**
  * A Standard Schema validator with the Standard JSON Schema conversion hook
  * required to describe tool inputs to AI SDK providers.
  */
-export type ToolSchema<Input = unknown, Output = Input> = StandardSchemaV1<
-  Input,
-  Output
-> &
+export type ToolSchema<Input = unknown, Output = Input> = StandardSchemaV1<Input, Output> &
   StandardJSONSchemaV1<Input, Output>;
 
 /** Context supplied by Tecido when it invokes a Tool. */
@@ -34,10 +28,7 @@ type ToolExecutor<Schema extends AnyToolSchema, Output> = (
 ) => Promise<Output>;
 
 /** Configuration and callable contract for one named Agent Tool. */
-export interface ToolOptions<
-  Schema extends AnyToolSchema = AnyToolSchema,
-  Output = unknown,
-> {
+export interface ToolOptions<Schema extends AnyToolSchema = AnyToolSchema, Output = unknown> {
   /** Description presented to the model when selecting a Tool. */
   readonly description: string;
   /** Standard Schema used for validation and model-facing JSON Schema conversion. */
@@ -53,30 +44,22 @@ export interface ToolOptions<
    * @param context Durable Run and cancellation identifiers.
    * @returns The serializable Tool result.
    */
-  execute(
-    input: StandardSchemaV1.InferOutput<Schema>,
-    context: ToolContext,
-  ): Promise<Output>;
+  execute(input: StandardSchemaV1.InferOutput<Schema>, context: ToolContext): Promise<Output>;
 }
 
 /** Typed Tool contract inferred from its input schema and execute result. */
-export type Tool<
-  Schema extends AnyToolSchema = AnyToolSchema,
-  Output = unknown,
-> = ToolOptions<Schema, Output>;
+export type Tool<Schema extends AnyToolSchema = AnyToolSchema, Output = unknown> = ToolOptions<Schema, Output>;
 
 const ToolOptionsSchema = z.object({
   description: NonEmptyStringSchema,
   inputSchema: z.custom<AnyToolSchema>(isToolSchema, {
-    message:
-      "Tool inputSchema must implement Standard Schema validation and JSON Schema conversion.",
+    message: "Tool inputSchema must implement Standard Schema validation and JSON Schema conversion.",
   }),
   retry: z.enum(["safe", "never"]).optional(),
   timeoutMs: z.number().positive().optional(),
-  execute: z.custom<ToolExecutor<AnyToolSchema, unknown>>(
-    (value) => typeof value === "function",
-    { message: "Tool execute must be a function." },
-  ),
+  execute: z.custom<ToolExecutor<AnyToolSchema, unknown>>((value) => typeof value === "function", {
+    message: "Tool execute must be a function.",
+  }),
 });
 
 /**
@@ -84,9 +67,7 @@ const ToolOptionsSchema = z.object({
  * @param options Description, input schema, retry policy, and executor.
  * @returns The same Tool contract with its input and output types preserved.
  */
-export function tool<Schema extends AnyToolSchema, Output>(
-  options: ToolOptions<Schema, Output>,
-): Tool<Schema, Output> {
+export function tool<Schema extends AnyToolSchema, Output>(options: ToolOptions<Schema, Output>): Tool<Schema, Output> {
   return parseToolOptions(options) as Tool<Schema, Output>;
 }
 
@@ -116,4 +97,3 @@ function isToolSchema(value: unknown): value is AnyToolSchema {
     typeof standard.jsonSchema.output === "function"
   );
 }
-

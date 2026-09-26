@@ -23,12 +23,7 @@ export class AgentRunError extends Error {
   /** Normalized failure details. */
   readonly error: AgentError;
 
-  constructor(
-    runId: RunId,
-    attempt: number,
-    status: "failed" | "cancelled",
-    error: AgentError,
-  ) {
+  constructor(runId: RunId, attempt: number, status: "failed" | "cancelled", error: AgentError) {
     super(error.message);
     this.name = "AgentRunError";
     this.runId = runId;

@@ -1,12 +1,4 @@
-import type {
-  RetryOptions,
-  RunId,
-  RunOptions,
-  RunResult,
-  RunSnapshot,
-  RunStream,
-  StreamEvent,
-} from "./run.js";
+import type { RetryOptions, RunId, RunOptions, RunResult, RunSnapshot, RunStream, StreamEvent } from "./run.js";
 
 /** Tenant or application boundary that scopes a Thread. */
 export type ThreadNamespace = string;
@@ -53,10 +45,7 @@ export interface Thread {
    * @param options Optional exclusive cursor from which to resume.
    * @returns An async stream of durable Run events.
    */
-  subscribe(
-    runId: RunId,
-    options?: { readonly afterSeq?: number },
-  ): AsyncIterable<StreamEvent>;
+  subscribe(runId: RunId, options?: { readonly afterSeq?: number }): AsyncIterable<StreamEvent>;
 
   /**
    * Explicitly retries a failed Run as a new attempt.
