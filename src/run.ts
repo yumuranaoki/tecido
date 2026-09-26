@@ -1,7 +1,13 @@
 import type { AgentError } from "./errors.js";
 import type { ModelUsage } from "./model.js";
 
-/** Durable lifecycle status of a Run. */
+/** Stable identifier assigned to an accepted Run. */
+export type RunId = string;
+
+/** Caller-supplied identifier used to deduplicate a submitted transaction. */
+export type TransactionId = string;
+
+/** Lifecycle status of a Run. */
 export type RunStatus =
   | "accepted"
   | "model_running"
@@ -21,23 +27,23 @@ export interface AgentOutput {
 /** Options shared by calls that accept a new input event. */
 export interface RunOptions {
   /** Optional caller-provided transaction identifier for deduplicating the same request. */
-  readonly transactionId?: string;
+  readonly transactionId?: TransactionId;
 }
 
 /** Successful result returned by `Thread.run()` or `Thread.retry()`. */
 export interface RunResult {
   /** Durable identifier of the Run. */
-  readonly runId: string;
+  readonly runId: RunId;
   /** Committed final assistant output. */
   readonly output: AgentOutput;
   /** Aggregate usage reported by the AI SDK model responses. */
   readonly usage?: ModelUsage;
 }
 
-/** Point-in-time durable summary of a Run. */
+/** Point-in-time summary of a Run. */
 export interface RunSnapshot {
   /** Durable identifier of the Run. */
-  readonly runId: string;
+  readonly runId: RunId;
   /** Current or terminal lifecycle status. */
   readonly status: RunStatus;
   /** Most recently accepted attempt number. */
@@ -70,7 +76,7 @@ export interface RetryOptions {
 }
 
 /**
- * Durable, resumable event emitted during a Run.
+ * Resumable event emitted during a Run.
  * Sequence numbers increase across attempts of the same Run.
  */
 export type StreamEvent =
@@ -116,5 +122,5 @@ export type StreamEvent =
 /** Async stream handle returned after a Run has been accepted. */
 export interface RunStream extends AsyncIterable<StreamEvent> {
   /** Identifier of the Run whose events this stream yields. */
-  readonly runId: string;
+  readonly runId: RunId;
 }

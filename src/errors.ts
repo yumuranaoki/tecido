@@ -1,3 +1,5 @@
+import type { RunId } from "./run.js";
+
 /** Normalized, provider-independent error information exposed by a Run. */
 export interface AgentError {
   /** Stable Tecido error code. */
@@ -11,27 +13,27 @@ export interface AgentError {
 }
 
 /** Error rejected by `Thread.run()` or `Thread.retry()` after a Run terminates. */
-export declare class AgentRunError extends Error {
+export class AgentRunError extends Error {
   /** Identifier of the failed or cancelled Run. */
-  readonly runId: string;
+  readonly runId: RunId;
   /** Attempt number that reached the terminal state. */
   readonly attempt: number;
-  /** Terminal status represented by this error. */
+  /** Terminal Run status represented by this error. */
   readonly status: "failed" | "cancelled";
   /** Normalized failure details. */
   readonly error: AgentError;
 
-  /**
-   * Creates the typed error view of a terminal Run.
-   * @param runId Identifier of the Run.
-   * @param attempt Attempt number that terminated.
-   * @param status Terminal Run status.
-   * @param error Normalized failure details.
-   */
   constructor(
-    runId: string,
+    runId: RunId,
     attempt: number,
     status: "failed" | "cancelled",
     error: AgentError,
-  );
+  ) {
+    super(error.message);
+    this.name = "AgentRunError";
+    this.runId = runId;
+    this.attempt = attempt;
+    this.status = status;
+    this.error = error;
+  }
 }

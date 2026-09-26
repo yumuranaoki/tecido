@@ -1,5 +1,5 @@
-import type { RunSnapshot, RetryOptions, StreamEvent } from "../run.js";
-import type { AcceptedRun, RuntimeThreadAddress, ThreadEvent } from "./events.js";
+import type { RunId, RunSnapshot, RetryOptions, StreamEvent } from "./run.js";
+import type { AcceptedRun, RuntimeThreadAddress, ThreadEvent } from "./runtime-events.js";
 
 /** Internal boundary implemented by a durable runtime host. */
 export interface RuntimePort {
@@ -28,7 +28,7 @@ export interface RuntimePort {
    */
   readRun(
     address: RuntimeThreadAddress,
-    runId: string,
+    runId: RunId,
   ): Promise<RunSnapshot>;
 
   /**
@@ -40,7 +40,7 @@ export interface RuntimePort {
    */
   subscribe(
     address: RuntimeThreadAddress,
-    runId: string,
+    runId: RunId,
     afterSeq: number,
   ): AsyncIterable<StreamEvent>;
 
@@ -53,7 +53,7 @@ export interface RuntimePort {
    */
   retry(
     address: RuntimeThreadAddress,
-    runId: string,
+    runId: RunId,
     options?: RetryOptions,
   ): Promise<RunSnapshot>;
 
@@ -62,5 +62,5 @@ export interface RuntimePort {
    * @param address Canonical Thread address.
    * @param runId Identifier of the Run to cancel.
    */
-  cancel(address: RuntimeThreadAddress, runId: string): Promise<void>;
+  cancel(address: RuntimeThreadAddress, runId: RunId): Promise<void>;
 }

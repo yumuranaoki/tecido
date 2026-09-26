@@ -8,6 +8,9 @@
     "node": ">=22"
   },
   "scripts": {
+    "lint": "oxlint",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
@@ -15,9 +18,17 @@
     "ai": "^7.0.0"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "^4.0.75",
     "@standard-schema/spec": "^1.1.0",
     "ai": "^7.0.0",
+    "esbuild": "^0.28.2",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0",
     "typescript": "^7.0.2",
     "zod": "^4.2.0"
+  },
+  "dependencies": {
+    "remeda": "^2.50.0",
+    "ts-pattern": "^5.9.0"
   }
 }

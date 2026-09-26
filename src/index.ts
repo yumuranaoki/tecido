@@ -12,14 +12,21 @@ export type { LanguageModel, ModelUsage } from "./model.js";
 export type {
   AgentOutput,
   RetryOptions,
+  RunId,
   RunOptions,
   RunResult,
   RunSnapshot,
   RunStatus,
   RunStream,
   StreamEvent,
+  TransactionId,
   ToolResolution,
 } from "./run.js";
-export type { Thread, ThreadAddress } from "./thread.js";
+export type {
+  Thread,
+  ThreadAddress,
+  ThreadId,
+  ThreadNamespace,
+} from "./thread.js";
 export { tool } from "./tool.js";
 export type { Tool, ToolContext, ToolOptions, ToolSchema } from "./tool.js";

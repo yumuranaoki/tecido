@@ -1,10 +1,11 @@
-import type { RunStatus } from "../run.js";
+import type { RunId, RunStatus } from "./run.js";
+import type { ThreadId, ThreadNamespace } from "./thread.js";
 
 /** Internal canonical address used by the runtime host. */
 export interface RuntimeThreadAddress {
-  readonly namespace: string;
+  readonly namespace: ThreadNamespace;
   readonly agentId: string;
-  readonly threadId: string;
+  readonly threadId: ThreadId;
 }
 
 /** Normalized durable event accepted by a Thread runtime. */
@@ -26,7 +27,7 @@ export type ThreadEvent =
 
 /** Durable acceptance result produced by a runtime host. */
 export interface AcceptedRun {
-  readonly runId: string;
+  readonly runId: RunId;
   readonly queueSeq: number;
   readonly status: RunStatus;
   readonly duplicate: boolean;
