@@ -1,5 +1,5 @@
 import { type ModelMessage, type ToolExecutionOptions, tool as aiTool, stepCountIs, streamText } from "ai";
-import { mapValues } from "remeda";
+import * as R from "remeda";
 import { P, match } from "ts-pattern";
 import type { AgentOptions } from "./agent.js";
 import { type AgentError, AgentRunError } from "./errors.js";
@@ -487,7 +487,7 @@ async function captureAsync<Value>(operation: () => Promise<Value>): Promise<Cap
 }
 
 function createModelTools(declarations: Readonly<Record<string, Tool<any, any>>>, run: RunState) {
-  return mapValues(declarations, (declaration) => adaptTool(declaration, run));
+  return R.mapValues(declarations, (declaration) => adaptTool(declaration, run));
 }
 
 function adaptTool<Schema extends Tool<any, any>>(declaration: Schema, run: RunState) {

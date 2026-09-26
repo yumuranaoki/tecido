@@ -1,5 +1,5 @@
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
-import { isPlainObject } from "remeda";
+import * as R from "remeda";
 import { z } from "zod/v4";
 import { NonEmptyStringSchema } from "./primitives.js";
 import type { RunId } from "./run.js";
@@ -84,15 +84,15 @@ function parseToolOptions(options: unknown): Tool<AnyToolSchema, unknown> {
 }
 
 function isToolSchema(value: unknown): value is AnyToolSchema {
-  if (!isPlainObject(value)) return false;
+  if (!R.isPlainObject(value)) return false;
 
   const standard = value["~standard"];
-  if (!isPlainObject(standard) || typeof standard.validate !== "function") {
+  if (!R.isPlainObject(standard) || typeof standard.validate !== "function") {
     return false;
   }
 
   return (
-    isPlainObject(standard.jsonSchema) &&
+    R.isPlainObject(standard.jsonSchema) &&
     typeof standard.jsonSchema.input === "function" &&
     typeof standard.jsonSchema.output === "function"
   );

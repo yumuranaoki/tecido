@@ -1,4 +1,4 @@
-import { mapValues } from "remeda";
+import * as R from "remeda";
 import { z } from "zod/v4";
 import type { AgentSchedule, CronHandler } from "./cron.js";
 import type { LanguageModel } from "./model.js";
@@ -39,17 +39,22 @@ const AgentScheduleSchema = z.object({
 });
 
 const AgentSchedulesSchema = z.array(AgentScheduleSchema).superRefine((schedules, context) => {
-  const seenIds = new Set<string>();
-  schedules.forEach((schedule, index) => {
-    if (seenIds.has(schedule.id)) {
-      context.addIssue({
-        code: "custom",
-        message: `Duplicate Agent schedule id: ${schedule.id}`,
-        path: [index, "id"],
-      });
-    }
-    seenIds.add(schedule.id);
-  });
+  const duplicates = R.pipe(
+    schedules,
+    R.map((schedule, index) => [index, schedule] as const),
+    R.groupBy(([, schedule]) => schedule.id),
+    R.values(),
+    R.flatMap((sameIdSchedules) => R.drop(sameIdSchedules, 1)),
+    R.sortBy(([index]) => index),
+  );
+
+  R.forEach(duplicates, ([index, schedule]) =>
+    context.addIssue({
+      code: "custom",
+      message: `Duplicate Agent schedule id: ${schedule.id}`,
+      path: [index, "id"],
+    }),
+  );
 });
 
 const AgentOptionsSchema = z.object({
@@ -105,7 +110,7 @@ function parseAgentOptions(options: unknown): AgentOptions {
   const tools =
     parsed.tools === undefined
       ? undefined
-      : mapValues(parsed.tools, (declaration) => tool(declaration as Tool<any, any>));
+      : R.mapValues(parsed.tools, (declaration) => tool(declaration as Tool<any, any>));
   const schedules = parsed.schedules === undefined ? undefined : parsed.schedules;
 
   return {
