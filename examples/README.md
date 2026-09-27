@@ -48,7 +48,7 @@ Builds replace the runtime config only after validation succeeds and preserve th
 
 Inputs and wakeup alarms commit in one storage transaction. Thread runs are ordered, completed results and stream events persist, and repeated transaction IDs resolve to the original Run. Model/tool checkpoints support explicit retry and reconciliation. Interrupted external calls are failed rather than automatically repeated. A cron hook is replayable: put external side effects in Tools, and use stable `transactionId` values when the same hook submits multiple operations to one Thread.
 
-This is the first runtime implementation, not completion of all v0.1 production requirements. It currently stores a versioned Thread snapshot, polls persisted stream events, and retains history without pruning. Retention limits, bounded context selection, aggregate usage accounting, relational storage migration, and multi-node takeover qualification remain. See [implementation status](../docs/design/runtime_port.md#13-初回実装の到達点) for details. Existing `conversation.v1` example data is not automatically imported.
+This is the first runtime implementation, not completion of all v0.1 production requirements. It currently stores a versioned Thread snapshot, polls persisted stream events, and retains history without pruning. Retention limits, bounded context selection, aggregate usage accounting, relational storage migration, and multi-node takeover qualification remain. See [implementation status](../docs/design/overview.md#current-implementation-boundary) for details. Existing `conversation.v1` example data is not automatically imported.
 
 ## Verification
 
