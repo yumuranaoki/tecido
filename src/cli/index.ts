@@ -69,14 +69,14 @@ if (
 
 function printHelp() {
   console.log(
-    "tecido build [--config <path>] | dev [--config <path>] [--port <port>] [--logs]\nRequires celld 0.5.1. dev listens on localhost and preserves .tecido/.celld.",
+    "tecido build [--config <path>] | dev [--config <path>] [--port <port>] [--logs]\nRequires celld 0.6.0. dev listens on localhost and preserves .tecido/.celld.",
   );
 }
 
 function assertCelldVersion(): void {
   const version = spawnSync(executable, ["--version"], { encoding: "utf8" });
-  if (version.status !== 0 || version.stdout.trim() !== "celld 0.5.1") {
-    throw new Error("Install celld 0.5.1; this adapter has not been verified against other versions.");
+  if (version.status !== 0 || version.stdout.trim() !== "celld 0.6.0") {
+    throw new Error("Install celld 0.6.0; this adapter has not been verified against other versions.");
   }
 }
 
@@ -150,7 +150,7 @@ async function buildWorker(
   });
   await writeFile(
     join(release, "manifest.json"),
-    JSON.stringify({ ...manifest, revision, celld: "0.5.1" }, null, 2) + "\n",
+    JSON.stringify({ ...manifest, revision, celld: "0.6.0" }, null, 2) + "\n",
   );
 
   return revision;

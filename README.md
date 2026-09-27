@@ -107,7 +107,7 @@ tecido build --config apps/assistant/tecido.config.ts
 
 ## Run the examples
 
-Install Celld **0.5.1**, run `pnpm install`, and follow [the example instructions](examples/README.md).
+Install Celld **0.6.0**, run `pnpm install`, and follow [the example instructions](examples/README.md).
 
 ```sh
 node src/cli/index.ts dev --config examples/tecido.config.ts

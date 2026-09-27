@@ -1,4 +1,4 @@
-/** Celld adapter contracts, verified against celld 0.5.1. */
+/** Celld adapter contracts targeting celld 0.6.0. */
 export interface StorageTransaction {
   get<Value>(key: string): Promise<Value | undefined>;
   put<Value>(key: string, value: Value): Promise<void>;

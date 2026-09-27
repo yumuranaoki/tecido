@@ -4,7 +4,7 @@ The application declares Agents and one `tecido.config.ts`. Tecido generates the
 
 ## Run locally
 
-1. Install Celld **0.5.1** and run `pnpm install` in the repository.
+1. Install Celld **0.6.0** and run `pnpm install` in the repository.
 2. Create `examples/.dev.vars` with your provider key:
 
    ```dotenv
