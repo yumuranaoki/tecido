@@ -3,8 +3,9 @@ import { z } from "zod/v4";
 import type { AgentSchedule, CronHandler } from "./cron.js";
 import type { LanguageModel } from "./model.js";
 import { NonEmptyStringSchema } from "./primitives.js";
-import { createThread } from "./thread-runtime.js";
-import type { Thread, ThreadAddress, ThreadId, ThreadNamespace } from "./thread.js";
+import { requireRuntime } from "./runtime-context.js";
+import { createThreadClient } from "./thread-client.js";
+import type { Thread, ThreadAddress } from "./thread.js";
 import type { Tool } from "./tool.js";
 import { tool } from "./tool.js";
 
@@ -12,8 +13,8 @@ import { tool } from "./tool.js";
 export interface AgentOptions {
   /** Stable identifier used with the Thread address. */
   readonly id: string;
-  /** AI SDK model used for each model round. */
-  readonly model: LanguageModel;
+  /** AI SDK model or runtime factory used for each model round. */
+  readonly model: LanguageModel | AgentModelFactory;
   /** System instructions supplied to the model. */
   readonly instructions: string;
   /** Tools available to the model, keyed by their public names. */
@@ -23,6 +24,14 @@ export interface AgentOptions {
   /** Optional handler invoked for each delivered schedule occurrence. */
   readonly onCron?: CronHandler;
 }
+
+/** Runtime values available when an Agent resolves its model. */
+export interface AgentModelContext {
+  readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+/** Creates an AI SDK model from values supplied by the active runtime. */
+export type AgentModelFactory = (context: AgentModelContext) => LanguageModel;
 
 /** A code-defined Agent declaration. */
 export interface Agent {
@@ -59,8 +68,8 @@ const AgentSchedulesSchema = z.array(AgentScheduleSchema).superRefine((schedules
 
 const AgentOptionsSchema = z.object({
   id: NonEmptyStringSchema,
-  model: z.custom<LanguageModel>(isObject, {
-    message: "Agent model must be an AI SDK LanguageModel object.",
+  model: z.custom<LanguageModel | AgentModelFactory>((value) => typeof value === "function" || isObject(value), {
+    message: "Agent model must be an AI SDK LanguageModel object or factory.",
   }),
   instructions: z.string(),
   tools: z.record(NonEmptyStringSchema, z.unknown()).optional(),
@@ -77,32 +86,31 @@ const ThreadAddressSchema = z.object({
   id: NonEmptyStringSchema,
 });
 
+const declarations = new WeakSet<object>();
+
 /**
  * Declares an Agent using an AI SDK language model and Tecido tools.
  * @param options Agent configuration.
  */
 export function agent(options: AgentOptions): Agent {
   const agentOptions = parseAgentOptions(options);
-  // The outer map is keyed by namespace; each inner map is keyed by ThreadAddress.id.
-  const threadsByNamespace = new Map<ThreadNamespace, Map<ThreadId, Thread>>();
-
-  return {
+  const declaration: Agent = {
     options: agentOptions,
     thread(address: ThreadAddress): Thread {
-      const parsedAddress = parseThreadAddress(address);
-      const threadsInNamespace = threadsByNamespace.get(parsedAddress.namespace);
-      const existing = threadsInNamespace?.get(parsedAddress.id);
-      if (existing !== undefined) return existing;
-
-      const thread = createThread(agentOptions);
-      if (threadsInNamespace === undefined) {
-        threadsByNamespace.set(parsedAddress.namespace, new Map([[parsedAddress.id, thread]]));
-      } else {
-        threadsInNamespace.set(parsedAddress.id, thread);
-      }
-      return thread;
+      const parsed = parseThreadAddress(address);
+      return createThreadClient(requireRuntime(declaration), {
+        namespace: parsed.namespace,
+        agentId: agentOptions.id,
+        threadId: parsed.id,
+      });
     },
   };
+  declarations.add(declaration);
+  return declaration;
+}
+
+export function isAgent(value: unknown): value is Agent {
+  return typeof value === "object" && value !== null && declarations.has(value);
 }
 
 function parseAgentOptions(options: unknown): AgentOptions {

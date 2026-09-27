@@ -15,6 +15,7 @@ export type ThreadEvent =
       readonly type: "message";
       readonly input: string;
       readonly receivedAt: string;
+      readonly transactionId?: string;
     }
   | {
       readonly eventId: string;
@@ -31,4 +32,6 @@ export interface AcceptedRun {
   readonly queueSeq: number;
   readonly status: RunStatus;
   readonly duplicate: boolean;
+  readonly attempt: number;
+  readonly afterSeq: number;
 }

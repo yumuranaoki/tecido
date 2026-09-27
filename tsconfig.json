@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2025", "DOM"],
     "rootDir": ".",
-    "types": [],
+    "types": ["node"],
     "moduleDetection": "force",
     "strict": true,
     "exactOptionalPropertyTypes": true,
@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "examples/**/*.ts"]
+  "include": ["src/**/*.ts", "examples/**/*.ts", "tests/**/*.ts"]
 }

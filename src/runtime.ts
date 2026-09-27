@@ -12,12 +12,6 @@ export interface RuntimePort {
   accept(address: RuntimeThreadAddress, event: ThreadEvent): Promise<AcceptedRun>;
 
   /**
-   * Executes the next accepted item for a Thread, if one is ready.
-   * @param address Canonical Thread address.
-   */
-  executeNext(address: RuntimeThreadAddress): Promise<void>;
-
-  /**
    * Reads one durable Run snapshot.
    * @param address Canonical Thread address.
    * @param runId Identifier of the Run to read.
@@ -39,9 +33,12 @@ export interface RuntimePort {
    * @param address Canonical Thread address.
    * @param runId Identifier of the Run to retry.
    * @param options Optional reconciliation for an uncertain Tool result.
-   * @returns The updated durable Run snapshot.
+   * @returns The accepted attempt identity and exclusive stream cursor.
    */
-  retry(address: RuntimeThreadAddress, runId: RunId, options?: RetryOptions): Promise<RunSnapshot>;
+  retry(address: RuntimeThreadAddress, runId: RunId, options?: RetryOptions): Promise<AcceptedRun>;
+
+  /** Reads the immutable result of a specific attempt. */
+  readAttempt(address: RuntimeThreadAddress, runId: RunId, attempt: number): Promise<RunSnapshot>;
 
   /**
    * Requests durable cancellation of a Run.

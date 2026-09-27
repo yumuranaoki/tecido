@@ -84,9 +84,9 @@ function parseToolOptions(options: unknown): Tool<AnyToolSchema, unknown> {
 }
 
 function isToolSchema(value: unknown): value is AnyToolSchema {
-  if (!R.isPlainObject(value)) return false;
+  if (typeof value !== "object" || value === null) return false;
 
-  const standard = value["~standard"];
+  const standard = Reflect.get(value, "~standard");
   if (!R.isPlainObject(standard) || typeof standard.validate !== "function") {
     return false;
   }
