@@ -16,7 +16,6 @@
     "test:e2e": "node --import ./tests/support/register.mjs --test ./tests/e2e"
   },
   "devDependencies": {
-    "@ai-sdk/openai": "^4.0.75",
     "@standard-schema/spec": "^1.1.0",
     "@types/node": "^26.6.2",
     "ai": "^7.0.0",
