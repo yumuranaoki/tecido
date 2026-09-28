@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import type { TecidoConfig } from "../../config.js";
+import { type ResolvedTecidoConfig, type TecidoConfig, parseConfig } from "../../config.js";
 import { withRuntimeContext } from "../../runtime-context.js";
 import type { RuntimePort } from "../../runtime.js";
 import { createThreadClient } from "../../thread-client.js";
@@ -21,6 +21,7 @@ const Journal = z.object({
   attempt: z.number().int().nonnegative(),
   operations: z.array(z.object({ address: Address, event: Event })),
   error: z.string().optional(),
+  expiresAt: z.number().int().positive().optional(),
 });
 
 const KEY = "tecido.occurrence.v1";
@@ -29,13 +30,17 @@ const KEY = "tecido.occurrence.v1";
 export class SchedulerCell {
   private draining = false;
 
+  private readonly config: ResolvedTecidoConfig;
+
   constructor(
     private readonly cell: CellState,
-    private readonly config: TecidoConfig,
+    config: TecidoConfig,
     private readonly port: RuntimePort,
     private readonly revision: string,
     private readonly env: Readonly<Record<string, string | undefined>> = {},
-  ) {}
+  ) {
+    this.config = parseConfig(config);
+  }
 
   async fetch(request: Request): Promise<Response> {
     const occurrence = Occurrence.safeParse(await request.json().catch(() => null));
@@ -82,15 +87,23 @@ export class SchedulerCell {
   private async drain(): Promise<void> {
     const journal = await this.cell.storage.transaction(async (tx) => {
       const value = Journal.parse(await tx.get<unknown>(KEY));
-      if (value.status === "completed" || value.status === "failed") return undefined;
+      if (value.status === "completed" || value.status === "failed") {
+        if (value.expiresAt !== undefined && value.expiresAt <= Date.now()) {
+          if (!tx.delete) throw new Error("STORAGE_DELETE_UNSUPPORTED");
+          await tx.delete(KEY);
+        } else if (value.expiresAt !== undefined) await tx.setAlarm(value.expiresAt);
+        return undefined;
+      }
 
       if (value.occurrence.revision !== this.revision || value.attempt >= 3) {
+        const expiresAt = Date.now() + this.config.retention.cronJournalMs;
         await tx.put(KEY, {
           ...value,
           status: "failed",
           error: value.attempt >= 3 ? "HOOK_RETRY_LIMIT" : "REVISION_MISMATCH",
+          expiresAt,
         });
-        await tx.deleteAlarm();
+        await tx.setAlarm(expiresAt);
         return undefined;
       }
       const next = { ...value, status: "running" as const, attempt: value.attempt + 1 };
@@ -156,19 +169,23 @@ export class SchedulerCell {
       );
       await this.cell.storage.transaction(async (tx) => {
         const state = Journal.parse(await tx.get<unknown>(KEY));
-        await tx.put(KEY, { ...state, status: "completed" });
-        await tx.deleteAlarm();
+        const expiresAt = Date.now() + this.config.retention.cronJournalMs;
+        await tx.put(KEY, { ...state, status: "completed", expiresAt });
+        await tx.setAlarm(expiresAt);
       });
     } catch (failure) {
       await this.cell.storage.transaction(async (tx) => {
         const state = Journal.parse(await tx.get<unknown>(KEY));
         const permanent = failure instanceof Error && failure.message === "IDEMPOTENCY_CONFLICT";
+        const terminal = permanent || state.attempt >= 3;
+        const expiresAt = terminal ? Date.now() + this.config.retention.cronJournalMs : undefined;
         await tx.put(KEY, {
           ...state,
-          status: permanent || state.attempt >= 3 ? "failed" : "accepted",
+          status: terminal ? "failed" : "accepted",
           error: permanent ? "IDEMPOTENCY_CONFLICT" : "HOOK_FAILED",
+          ...(expiresAt === undefined ? {} : { expiresAt }),
         });
-        if (permanent || state.attempt >= 3) await tx.deleteAlarm();
+        if (expiresAt !== undefined) await tx.setAlarm(expiresAt);
         else await tx.setAlarm(Date.now() + 1000 * 2 ** state.attempt);
       });
     }

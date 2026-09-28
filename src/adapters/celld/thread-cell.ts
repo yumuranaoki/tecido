@@ -1,9 +1,10 @@
 import { type ModelMessage, tool as aiTool, streamText } from "ai";
 import { z } from "zod/v4";
 import type { AgentOptions } from "../../agent.js";
-import type { TecidoConfig } from "../../config.js";
-import type { LanguageModel } from "../../model.js";
+import { type ResolvedTecidoConfig, type TecidoConfig, parseConfig } from "../../config.js";
+import type { LanguageModel, ModelUsage } from "../../model.js";
 import { runtimeEnv } from "../../runtime-context.js";
+import type { Tool } from "../../tool.js";
 import { awaitWithSignal } from "./abort.js";
 import type { CellState } from "./contracts.js";
 import { Command, Retry, State, type StoredRun, type StoredState } from "./schema.js";
@@ -15,6 +16,7 @@ type ThreadCommand = z.infer<typeof Command>;
 type Transition<Value> = { state: StoredState; value: Value };
 
 type ModelCall = { toolCallId: string; toolName: string; input: unknown };
+type ModelStreamPart = { type: string; text?: string };
 
 type StoredToolCall = StoredRun["calls"][number];
 type RetryResolution = z.infer<typeof Retry>["reconcile"];
@@ -25,10 +27,15 @@ export class ThreadCell {
   private recovering = true;
   private draining = false;
 
+  private readonly config: ResolvedTecidoConfig;
+
   constructor(
     private readonly cell: CellState,
-    private readonly config: TecidoConfig,
-  ) {}
+    config: TecidoConfig,
+    private readonly revision = "unknown",
+  ) {
+    this.config = parseConfig(config);
+  }
 
   private update<Value>(
     transition: (state: StoredState | undefined) => { state: StoredState; value: Value },
@@ -38,7 +45,30 @@ export class ThreadCell {
       const raw = await tx.get<unknown>(KEY);
       const state = raw === undefined ? undefined : State.parse(raw);
       const next = transition(state);
-      if (state !== next.state) await tx.put(KEY, State.parse(next.state));
+      if (state !== next.state) {
+        const migrated = State.parse(next.state);
+        const cutoff = Date.now();
+        const retained = {
+          ...migrated,
+          runs: migrated.runs
+            .filter(
+              (run) => !terminal(run) || cutoff - Date.parse(run.snapshot.updatedAt) < this.config.retention.runMs,
+            )
+            .map((run) => {
+              const age = cutoff - Date.parse(run.snapshot.updatedAt);
+              const withoutExpiredKey =
+                run.event.type === "message" &&
+                run.event.transactionId !== undefined &&
+                age >= this.config.retention.idempotencyMs
+                  ? { ...run, event: { ...run.event, transactionId: undefined } }
+                  : run;
+              if (terminal(run) && age >= this.config.retention.streamEventMs && run.events.length)
+                return { ...withoutExpiredKey, events: [], eventStartSeq: run.events.at(-1)!.seq };
+              return withoutExpiredKey;
+            }),
+        };
+        await tx.put(KEY, State.parse(retained));
+      }
       if (arm) {
         if (next.state.runs.some((run) => !terminal(run))) {
           const deadline = await tx.getAlarm();
@@ -108,7 +138,8 @@ export class ThreadCell {
         (command.event.type === "message" &&
           command.event.transactionId !== undefined &&
           run.event.type === "message" &&
-          run.event.transactionId === command.event.transactionId),
+          run.event.transactionId === command.event.transactionId &&
+          Date.now() - Date.parse(run.snapshot.acceptedAt) < this.config.retention.idempotencyMs),
     );
     if (previous) {
       if (semantic(previous.event) !== semantic(command.event)) throw new Error("IDEMPOTENCY_CONFLICT");
@@ -162,6 +193,7 @@ export class ThreadCell {
   private eventsCommand(state: StoredState, command: Extract<ThreadCommand, { type: "events" }>): Transition<unknown> {
     const run = requireRun(state, command.runId);
 
+    if (command.afterSeq < (run.eventStartSeq ?? 0)) throw new Error("STREAM_CURSOR_EXPIRED");
     return {
       state,
       value: { events: run.events.filter((event) => event.seq > command.afterSeq), terminal: terminal(run) },
@@ -280,14 +312,15 @@ export class ThreadCell {
       const declaration = this.config.agents.find((agent) => agent.options.id === selected.address.agentId);
       if (!declaration) throw new Error("AGENT_NOT_REGISTERED");
       await this.execute(selected.run.snapshot.runId, declaration.options, controller.signal);
-    } catch {
+    } catch (failure) {
+      const code = failure instanceof Error && /^[A-Z_]+$/.test(failure.message) ? failure.message : "RUN_FAILED";
       await this.change(selected.run.snapshot.runId, (run) =>
         terminal(run)
           ? run
           : finish(
               run,
               run.cancelled && run.snapshot.status !== "tool_running" ? "cancelled" : "failed",
-              run.snapshot.status === "tool_running" ? "INDETERMINATE_SIDE_EFFECT" : "RUN_FAILED",
+              run.snapshot.status === "tool_running" ? "INDETERMINATE_SIDE_EFFECT" : code,
             ),
       );
     } finally {
@@ -309,34 +342,41 @@ export class ThreadCell {
     const model = typeof options.model === "function" ? options.model({ env: runtimeEnv() }) : options.model;
 
     while (!terminal(run)) {
-      if (run.cancelled) {
-        await this.change(runId, (current) => finish(current, "cancelled"));
-
-        return;
-      }
-
-      if (run.calls.length) {
-        run = await this.executeToolCalls(runId, run, options, signal);
-
-        continue;
-      }
-
-      if (run.round >= 8) throw new Error("MODEL_ROUND_LIMIT");
-      const round = await this.executeModelRound(runId, run, options, model, signal);
-      run = round.run;
-      if (run.cancelled || signal.aborted) throw new Error("RUN_CANCELLED");
-
-      if (round.calls.length) {
-        run = await this.recordToolCalls(runId, options, round.messages, round.calls);
-
-        continue;
-      }
-
-      if (round.reason !== "stop") throw new Error("MODEL_INCOMPLETE");
-      await this.completeRun(runId, round.messages);
-
-      return;
+      const next = await this.executeNext(runId, run, options, model, signal);
+      if (next === undefined) return;
+      run = next;
     }
+  }
+
+  private async executeNext(
+    runId: string,
+    run: StoredRun,
+    options: AgentOptions,
+    model: LanguageModel,
+    signal: AbortSignal,
+  ): Promise<StoredRun | undefined> {
+    if (run.cancelled) {
+      await this.change(runId, (current) => finish(current, "cancelled"));
+      return undefined;
+    }
+    if (run.calls.length) return this.executeToolCalls(runId, run, options, signal);
+
+    this.assertRunWithinLimit(run);
+    const round = await this.executeModelRound(runId, run, options, model, signal);
+    if (round.run.cancelled || signal.aborted) throw new Error("RUN_CANCELLED");
+    if (round.calls.length) {
+      if (round.run.round >= this.config.limits.maxToolRounds) throw new Error("TOOL_ROUND_LIMIT");
+      return this.recordToolCalls(runId, options, round.messages, round.calls);
+    }
+    if (round.reason !== "stop") throw new Error("MODEL_INCOMPLETE");
+
+    await this.completeRun(runId, round.messages);
+    return undefined;
+  }
+
+  private assertRunWithinLimit(run: StoredRun): void {
+    if (Date.now() - Date.parse(run.snapshot.acceptedAt) >= this.config.limits.runTimeoutMs)
+      throw new Error("RUN_TIMEOUT");
   }
 
   private initializeRun(runId: string): Promise<StoredRun> {
@@ -371,30 +411,55 @@ export class ThreadCell {
     options: AgentOptions,
     signal: AbortSignal,
   ): Promise<StoredRun> {
-    const declaration = options.tools?.[planned.name];
-    if (!declaration) throw new Error("TOOL_NOT_FOUND");
-    const validated = await declaration.inputSchema["~standard"].validate(planned.input);
-    if (validated.issues) throw new Error("TOOL_INPUT_INVALID");
-
+    const { declaration, input } = await this.validateToolCall(planned, options);
     const running = await this.change(runId, (current) => ({
       ...current,
       snapshot: { ...current.snapshot, status: "tool_running", updatedAt: now() },
       calls: current.calls.map((call) => (call.id === planned.id ? { ...call, status: "running" } : call)),
     }));
-    if (terminal(running)) {
-      return running;
-    }
+    if (terminal(running)) return running;
 
-    const toolSignal = AbortSignal.any([signal, AbortSignal.timeout(declaration.timeoutMs ?? 60000)]);
-    const output = z
-      .json()
-      .parse(
-        await awaitWithSignal(
-          () => declaration.execute(validated.value, { runId, toolCallId: planned.id, signal: toolSignal }),
-          toolSignal,
-        ),
+    const output = await this.invokeTool(runId, planned.id, declaration, input, running, signal);
+    return this.persistToolResult(runId, planned, output);
+  }
+
+  private async validateToolCall(planned: StoredToolCall, options: AgentOptions) {
+    const declaration = options.tools?.[planned.name];
+    if (!declaration) throw new Error("TOOL_NOT_FOUND");
+    const validated = await declaration.inputSchema["~standard"].validate(planned.input);
+    if (validated.issues) throw new Error("TOOL_INPUT_INVALID");
+    return { declaration, input: validated.value };
+  }
+
+  private async invokeTool(
+    runId: string,
+    toolCallId: string,
+    declaration: Tool<any, any>,
+    input: unknown,
+    run: StoredRun,
+    signal: AbortSignal,
+  ): Promise<z.JSONType> {
+    const remainingRunMs = this.config.limits.runTimeoutMs - (Date.now() - Date.parse(run.snapshot.acceptedAt));
+    const configuredToolTimeout = declaration.timeoutMs ?? this.config.limits.toolTimeoutMs;
+    const toolSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(Math.min(configuredToolTimeout, Math.max(1, remainingRunMs))),
+    ]);
+    let rawOutput: unknown;
+    try {
+      rawOutput = await awaitWithSignal(
+        () => declaration.execute(input, { runId, toolCallId, signal: toolSignal }),
+        toolSignal,
       );
+    } catch (failure) {
+      if (signal.aborted) throw new Error("RUN_CANCELLED");
+      if (toolSignal.aborted) throw new Error(remainingRunMs <= configuredToolTimeout ? "RUN_TIMEOUT" : "TOOL_TIMEOUT");
+      throw new Error("TOOL_ERROR", { cause: failure });
+    }
+    return z.json().parse(rawOutput);
+  }
 
+  private persistToolResult(runId: string, planned: StoredToolCall, output: z.JSONType): Promise<StoredRun> {
     return this.change(runId, (current) => ({
       ...current,
       snapshot: { ...current.snapshot, status: "tool_completed", updatedAt: now() },
@@ -439,21 +504,20 @@ export class ThreadCell {
     model: LanguageModel,
     signal: AbortSignal,
   ) {
-    run = await this.change(runId, (current) => ({
-      ...current,
-      text: "",
-      snapshot: { ...current.snapshot, status: "model_running", updatedAt: now() },
-    }));
+    run = await this.beginModelRound(runId, run);
     if (terminal(run)) {
       return { run, messages: [] as readonly ModelMessage[], calls: [] as readonly ModelCall[], reason: "cancelled" };
     }
 
+    const remainingRunMs = this.config.limits.runTimeoutMs - (Date.now() - Date.parse(run.snapshot.acceptedAt));
+    const modelTimeoutMs = Math.min(this.config.limits.modelTimeoutMs, Math.max(1, remainingRunMs));
+    const modelTimeout = AbortSignal.timeout(modelTimeoutMs);
     const result = streamText({
       model,
       system: options.instructions,
-      messages: run.context!,
+      messages: limitContext(run.context!, this.config.limits.maxContextTokens, options.instructions),
       maxRetries: 0,
-      abortSignal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
+      abortSignal: AbortSignal.any([signal, modelTimeout]),
       tools: Object.fromEntries(
         Object.entries(options.tools ?? {}).map(([name, declaration]) => [
           name,
@@ -461,31 +525,68 @@ export class ThreadCell {
         ]),
       ),
     });
-    for await (const part of result.fullStream) {
-      if (part.type === "error" || part.type === "tool-error" || part.type === "abort") throw new Error("MODEL_ERROR");
-      if (part.type === "text-delta")
-        run = await this.change(runId, (current) => ({
-          ...current,
-          text: current.text + part.text,
-          events: [
-            ...current.events,
-            {
-              type: "text-delta",
-              delta: part.text,
-              seq: current.events.length + 1,
-              attempt: current.snapshot.attempt,
-            },
-          ],
-        }));
-    }
+    run = await this.persistModelStream(runId, result.fullStream, run, signal, modelTimeout, remainingRunMs);
 
     const [messages, calls, reason] = await Promise.all([
       result.responseMessages,
       result.toolCalls,
       result.finishReason,
     ]);
+    const roundUsage = JSON.parse(JSON.stringify(await result.usage)) as ModelUsage;
+    run = await this.change(runId, (current) => ({
+      ...current,
+      snapshot: { ...current.snapshot, usage: aggregateUsage(current.snapshot.usage, roundUsage) },
+    }));
 
     return { run, messages, calls, reason };
+  }
+
+  private beginModelRound(runId: string, run: StoredRun): Promise<StoredRun> {
+    this.assertRunWithinLimit(run);
+    return this.change(runId, (current) => ({
+      ...current,
+      text: "",
+      snapshot: {
+        ...current.snapshot,
+        status: "model_running",
+        updatedAt: now(),
+        startedAt: current.snapshot.startedAt ?? now(),
+        deploymentRevision: this.revision,
+      },
+    }));
+  }
+
+  private async persistModelStream(
+    runId: string,
+    parts: AsyncIterable<ModelStreamPart>,
+    initialRun: StoredRun,
+    signal: AbortSignal,
+    modelTimeout: AbortSignal,
+    remainingRunMs: number,
+  ): Promise<StoredRun> {
+    let run = initialRun;
+    for await (const part of parts) {
+      if (part.type === "abort") {
+        if (signal.aborted) throw new Error("RUN_CANCELLED");
+        if (modelTimeout.aborted)
+          throw new Error(remainingRunMs <= this.config.limits.modelTimeoutMs ? "RUN_TIMEOUT" : "MODEL_TIMEOUT");
+        throw new Error("MODEL_ERROR");
+      }
+      if (part.type === "error" || part.type === "tool-error") throw new Error("MODEL_ERROR");
+      if (part.type === "text-delta") run = await this.persistTextDelta(runId, part.text ?? "");
+    }
+    return run;
+  }
+
+  private persistTextDelta(runId: string, delta: string): Promise<StoredRun> {
+    return this.change(runId, (current) => ({
+      ...current,
+      text: current.text + delta,
+      events: [
+        ...current.events,
+        { type: "text-delta", delta, seq: current.events.length + 1, attempt: current.snapshot.attempt },
+      ],
+    }));
   }
 
   private recordToolCalls(
@@ -542,11 +643,21 @@ export class ThreadCell {
           ...current.snapshot,
           status: "completed",
           updatedAt: now(),
-          result: { runId, output: { text: current.text } },
+          finishedAt: now(),
+          result: {
+            runId,
+            output: { text: current.text },
+            ...(current.snapshot.usage === undefined ? {} : { usage: current.snapshot.usage }),
+          },
         },
         events: [
           ...current.events,
-          { type: "completed", seq: current.events.length + 1, attempt: current.snapshot.attempt },
+          {
+            type: "completed",
+            seq: current.events.length + 1,
+            attempt: current.snapshot.attempt,
+            ...(current.snapshot.usage === undefined ? {} : { usage: current.snapshot.usage }),
+          },
         ],
       };
       const priorLength = current.contextStart!;
@@ -560,11 +671,45 @@ export class ThreadCell {
   }
 }
 
+function limitContext(messages: readonly ModelMessage[], maxTokens: number, instructions: string): ModelMessage[] {
+  const estimate = (items: readonly ModelMessage[]) =>
+    Math.ceil((instructions.length + JSON.stringify(items).length) / 4);
+  let selected = [...messages];
+  while (estimate(selected) > maxTokens && selected.length > 1) {
+    const nextUser = selected.findIndex((message, index) => index > 0 && message.role === "user");
+    if (nextUser < 0) break;
+    selected = selected.slice(nextUser);
+  }
+  if (estimate(selected) > maxTokens) throw new Error("CONTEXT_LIMIT_EXCEEDED");
+  return selected;
+}
+
 const terminal = (run: StoredRun) => ["completed", "failed", "cancelled"].includes(run.snapshot.status);
 
 const now = () => new Date().toISOString();
 
 const error = (code: string) => ({ code, message: code, retryable: code !== "INDETERMINATE_SIDE_EFFECT" });
+
+function aggregateUsage(prior: unknown, next: unknown): ModelUsage {
+  return mergeUsageValue(prior, next) as ModelUsage;
+}
+
+function mergeUsageValue(left: unknown, right: unknown): unknown {
+  if (typeof left === "number" && typeof right === "number") return left + right;
+  if (isUsageRecord(left) && isUsageRecord(right)) return mergeUsageRecords(left, right);
+  return right ?? left;
+}
+
+function isUsageRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeUsageRecords(left: Record<string, unknown>, right: Record<string, unknown>): Record<string, unknown> {
+  const combined = { ...left };
+  for (const [key, value] of Object.entries(right))
+    combined[key] = key in combined ? mergeUsageValue(combined[key], value) : value;
+  return combined;
+}
 
 function requireRun(state: StoredState, runId: string): StoredRun {
   const run = state.runs.find((item) => item.snapshot.runId === runId);
@@ -580,7 +725,7 @@ function finish(run: StoredRun, status: "failed" | "cancelled", code?: string): 
   const failure = status === "failed" ? error(code ?? "RUN_FAILED") : undefined;
   return {
     ...run,
-    snapshot: { ...run.snapshot, status, updatedAt: now(), ...(failure ? { error: failure } : {}) },
+    snapshot: { ...run.snapshot, status, updatedAt: now(), finishedAt: now(), ...(failure ? { error: failure } : {}) },
     events: [
       ...run.events,
       {

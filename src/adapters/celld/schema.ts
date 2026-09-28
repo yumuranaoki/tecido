@@ -1,5 +1,6 @@
 import { modelMessageSchema } from "ai";
 import { z } from "zod/v4";
+import type { ModelUsage } from "../../model.js";
 import { NonEmptyStringSchema as ID } from "../../primitives.js";
 
 export const Address = z.object({ namespace: ID, agentId: ID, threadId: ID });
@@ -35,7 +36,9 @@ export const Status = z.enum([
   "cancelled",
 ]);
 
-export const Result = z.object({ runId: ID, output: z.object({ text: z.string() }) });
+const ModelUsageData = z.json().transform((value) => value as unknown as ModelUsage);
+
+export const Result = z.object({ runId: ID, output: z.object({ text: z.string() }), usage: ModelUsageData.optional() });
 
 export const Snapshot = z
   .object({
@@ -46,6 +49,10 @@ export const Snapshot = z
     updatedAt: z.iso.datetime(),
     result: Result.optional(),
     error: ErrorData.optional(),
+    usage: ModelUsageData.optional(),
+    deploymentRevision: ID.optional(),
+    startedAt: z.iso.datetime().optional(),
+    finishedAt: z.iso.datetime().optional(),
   })
   .transform(({ result, error, ...snapshot }) => ({
     ...snapshot,
@@ -59,7 +66,7 @@ export const Stream = z.discriminatedUnion("type", [
   z.object({ ...sequence, type: z.literal("text-delta"), delta: z.string() }),
   z.object({ ...sequence, type: z.literal("tool-call"), toolCallId: ID, name: ID, input: z.json() }),
   z.object({ ...sequence, type: z.literal("tool-result"), toolCallId: ID, output: z.json() }),
-  z.object({ ...sequence, type: z.literal("completed") }),
+  z.object({ ...sequence, type: z.literal("completed"), usage: z.custom<ModelUsage>().optional() }),
   z.object({ ...sequence, type: z.literal("failed"), error: ErrorData }),
   z.object({ ...sequence, type: z.literal("cancelled") }),
 ]);
@@ -89,6 +96,7 @@ export const Run = z.object({
   queueSeq: z.number().int().positive(),
   dispatchSeq: z.number().int().positive(),
   afterSeq: z.number().int().nonnegative(),
+  eventStartSeq: z.number().int().nonnegative().optional(),
   events: z.array(Stream),
   attempts: z.array(Snapshot),
   context: z.array(modelMessageSchema).optional(),

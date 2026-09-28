@@ -37,7 +37,7 @@ export interface RunResult {
   /** Committed final assistant output. */
   readonly output: AgentOutput;
   /** Aggregate usage reported by the AI SDK model responses. */
-  readonly usage?: ModelUsage;
+  readonly usage?: ModelUsage | undefined;
 }
 
 /** Point-in-time summary of a Run. */
@@ -56,6 +56,13 @@ export interface RunSnapshot {
   readonly error?: AgentError;
   /** Successful result, when the Run completed. */
   readonly result?: RunResult;
+  /** Aggregate provider usage for this attempt. */
+  readonly usage?: ModelUsage | undefined;
+  /** Deployment revision that executed this attempt. */
+  readonly deploymentRevision?: string | undefined;
+  /** ISO-8601 timestamps bracketing execution, when started/finished. */
+  readonly startedAt?: string | undefined;
+  readonly finishedAt?: string | undefined;
 }
 
 /** Application-supplied outcome for reconciling an uncertain tool side effect. */
@@ -105,7 +112,7 @@ export type StreamEvent =
       readonly seq: number;
       readonly attempt: number;
       readonly type: "completed";
-      readonly usage?: ModelUsage;
+      readonly usage?: ModelUsage | undefined;
     }
   | {
       readonly seq: number;

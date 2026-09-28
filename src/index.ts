@@ -20,4 +20,11 @@ export type {
 export type { Thread, ThreadAddress, ThreadId, ThreadNamespace } from "./thread.js";
 export { tool } from "./tool.js";
 export type { Tool, ToolContext, ToolOptions, ToolSchema } from "./tool.js";
-export type { AppContext, RequestHandler, TecidoConfig } from "./config.js";
+export type {
+  AppContext,
+  RequestHandler,
+  ResolvedTecidoConfig,
+  RetentionPolicy,
+  RuntimeLimits,
+  TecidoConfig,
+} from "./config.js";

@@ -28,7 +28,7 @@ export function createWorker(rawConfig: unknown, expectedManifest: string, revis
         state: CellState,
         private readonly env: HostEnv,
       ) {
-        super(state, config);
+        super(state, config, revision);
       }
       override alarm(): Promise<void> {
         return withRuntimeContext(runtimeContext(this.env), () => super.alarm());
