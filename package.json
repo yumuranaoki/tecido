@@ -12,8 +12,8 @@
     "format:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit",
     "prepare": "husky",
-    "test:integration": "node --import ./tests/support/register.mjs --test ./tests/integration",
-    "test:e2e": "node --import ./tests/support/register.mjs --test ./tests/e2e"
+    "test:integration": "node --import ./tests/support/register.mjs --test ./tests/integration/*.test.ts",
+    "test:e2e": "node --import ./tests/support/register.mjs --test ./tests/e2e/**/*.test.ts"
   },
   "devDependencies": {
     "@standard-schema/spec": "^1.1.0",

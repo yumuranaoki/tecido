@@ -38,6 +38,7 @@ export default {
   agents: [assistant],
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/health") return new Response(null, { status: 204 });
     const thread = assistant.thread({ namespace: "fixture", id: "test" });
     if (url.pathname === "/read") return Response.json(await thread.getRun(url.searchParams.get("runId")!));
     if (url.pathname === "/stream") {

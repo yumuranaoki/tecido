@@ -69,7 +69,12 @@ test("Celld generated Worker integration", { timeout: 180_000 }, async () => {
     });
     await until(async () => {
       if (started.exitCode !== null) throw new Error(output);
-      return output.includes("ready  http://");
+      try {
+        const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) });
+        return response.status === 204;
+      } catch {
+        return false;
+      }
     }, 20000);
   }
 

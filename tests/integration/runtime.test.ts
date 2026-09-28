@@ -228,7 +228,9 @@ test("cron replay delivers journaled operation once to Thread", async () => {
   await scheduler.alarm();
   await scheduler.alarm();
   assert.equal(State.parse(await storage.get("tecido.thread.v1")).runs.length, 1);
-  assert.equal(schedulerStorage.alarm, null);
+  const journal = await schedulerStorage.get<{ status: string; expiresAt: number }>("tecido.occurrence.v1");
+  assert.equal(journal?.status, "completed");
+  assert.equal(schedulerStorage.alarm, journal?.expiresAt);
 });
 
 test("Tool plan and result persist before next model round", async () => {
