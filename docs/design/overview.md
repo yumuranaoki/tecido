@@ -10,24 +10,24 @@ The persistence guarantees cover accepted input and Run identity, completed inte
 
 ```text
 Application
-  ├── Agent / Tool / Thread API and Run semantics      Tecido Core
+  ├── Agent / Tool / Thread API and Run semantics       Tecido Core
+  ├── durable execution and host-neutral protocol       Tecido runtime host
   ├── model abstraction and provider implementation     AI SDK / @ai-sdk/*
-  └── deployable host and persistent runtime           Celld adapter
-       ├── address routing and per-Thread serialization
-       ├── durable acceptance, queue, storage, alarms
-       ├── checkpoints, recovery, stream replay
-       └── cron dispatch and Worker configuration generation
+  └── deployable lifecycle and bindings                 Celld adapter
+       ├── Worker request, alarm, and cron hooks
+       └── Worker configuration generation
 ```
 
-| Component     | Responsibility                                                                                                                                                            |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tecido Core   | Agent/Thread/Run contracts, state transitions, event normalization, Tool validation and execution boundary, model rounds, checkpoints, retry decisions, and stream events |
-| AI SDK        | Provider/model abstraction and normalization of provider streams                                                                                                          |
-| Celld adapter | Address routing, single-writer execution, durable queue, SQLite transactions, alarms, persistence and recovery, and cron dispatch                                         |
-| Application   | Authentication and authorization, principal-to-Thread-address mapping, provider and secret selection, and idempotency or reconciliation for external side effects         |
-| CLI           | Agent declaration validation, manifest/Worker/Celld configuration generation, and development startup                                                                     |
+| Component           | Responsibility                                                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tecido Core         | Agent/Thread/Run contracts, event normalization, Tool boundary, and public facade                                                                                 |
+| Tecido runtime host | Host-neutral command protocol, address routing, state transitions, durable queue, checkpoints, recovery, retry decisions, stream events, and cron journal         |
+| AI SDK              | Provider/model abstraction and normalization of provider streams                                                                                                  |
+| Celld adapter       | Celld binding translation and Worker request, alarm, and cron lifecycle integration                                                                               |
+| Application         | Authentication and authorization, principal-to-Thread-address mapping, provider and secret selection, and idempotency or reconciliation for external side effects |
+| CLI                 | Agent declaration validation, manifest/Worker/Celld configuration generation, and development startup                                                             |
 
-Core does not depend on Celld types or classes. It connects to the host through an internal RuntimePort, which is not part of the public API. Tecido does not delegate durable execution to the AI SDK's automatic Tool loop; it manages model rounds, Tool-level checkpoints, FIFO ordering, retries, and recovery.
+Core and the shared runtime host do not depend on Celld types or classes. The Thread facade connects to the runtime host through an internal RuntimePort, which is not part of the public API. The Celld production adapter installs that port and translates Celld lifecycle events into the shared Thread and schedule objects. Tecido does not delegate durable execution to the AI SDK's automatic Tool loop; it manages model rounds, Tool-level checkpoints, FIFO ordering, retries, and recovery.
 
 ## Identity, events, and deduplication
 

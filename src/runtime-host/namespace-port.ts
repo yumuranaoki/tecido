@@ -1,20 +1,20 @@
 import { z } from "zod/v4";
-import type { RuntimeThreadAddress } from "../../runtime-events.js";
-import type { RuntimePort } from "../../runtime.js";
-import type { CellNamespace } from "./contracts.js";
-import { Accepted, Snapshot, Stream } from "./schema.js";
+import type { RuntimeThreadAddress } from "../runtime-events.js";
+import type { RuntimePort } from "../runtime.js";
+import type { RuntimeObjectNamespace } from "./contracts.js";
+import { Accepted, Snapshot, Stream } from "./protocol.js";
 
-export async function cellKey(address: RuntimeThreadAddress): Promise<string> {
+export async function objectKey(address: RuntimeThreadAddress): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify([1, address.namespace, address.agentId, address.threadId]));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export function createCelldPort(namespace: CellNamespace): RuntimePort {
+export function createNamespacePort(namespace: RuntimeObjectNamespace): RuntimePort {
   const send = async (address: RuntimeThreadAddress, command: object): Promise<unknown> => {
-    const cell = namespace.get(namespace.idFromName(await cellKey(address)));
-    // This is an internal RPC to the Durable Object cell, not an external HTTP request.
-    const response = await cell.fetch(
+    const object = namespace.get(namespace.idFromName(await objectKey(address)));
+    // This is an internal request to the addressed runtime object, not an external HTTP request.
+    const response = await object.fetch(
       new Request("https://tecido/thread", { method: "POST", body: JSON.stringify({ ...command, address }) }),
     );
     const body: unknown = await response.json();

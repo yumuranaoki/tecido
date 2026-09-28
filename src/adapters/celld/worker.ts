@@ -2,10 +2,11 @@ import { z } from "zod/v4";
 import { parseConfig } from "../../config.js";
 import { createManifest } from "../../manifest.js";
 import { withRuntimeContext } from "../../runtime-context.js";
-import type { CellState, HostEnv } from "./contracts.js";
-import { createCelldPort } from "./port.js";
-import { SchedulerCell } from "./scheduler.js";
-import { ThreadCell } from "./thread-cell.js";
+import type { RuntimeObjectState } from "../../runtime-host/contracts.js";
+import { createNamespacePort } from "../../runtime-host/namespace-port.js";
+import { ScheduleObject } from "../../runtime-host/schedule-object.js";
+import { ThreadObject } from "../../runtime-host/thread-object.js";
+import type { HostEnv } from "./contracts.js";
 
 export function createWorker(rawConfig: unknown, expectedManifest: string, revision: string) {
   const config = parseConfig(rawConfig);
@@ -18,14 +19,14 @@ export function createWorker(rawConfig: unknown, expectedManifest: string, revis
   });
   const runtimeContext = (env: HostEnv) => ({
     agents: config.agents,
-    port: createCelldPort(env.TECIDO_THREADS),
+    port: createNamespacePort(env.TECIDO_THREADS),
     env: context(env).env,
   });
 
   return {
-    ThreadCell: class extends ThreadCell {
+    ThreadCell: class extends ThreadObject {
       constructor(
-        state: CellState,
+        state: RuntimeObjectState,
         private readonly env: HostEnv,
       ) {
         super(state, config, revision);
@@ -34,9 +35,9 @@ export function createWorker(rawConfig: unknown, expectedManifest: string, revis
         return withRuntimeContext(runtimeContext(this.env), () => super.alarm());
       }
     },
-    SchedulerCell: class extends SchedulerCell {
-      constructor(state: CellState, env: HostEnv) {
-        super(state, config, createCelldPort(env.TECIDO_THREADS), revision, context(env).env);
+    SchedulerCell: class extends ScheduleObject {
+      constructor(state: RuntimeObjectState, env: HostEnv) {
+        super(state, config, createNamespacePort(env.TECIDO_THREADS), revision, context(env).env);
       }
     },
     handler: {

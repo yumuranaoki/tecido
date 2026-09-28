@@ -1,10 +1,10 @@
 import { z } from "zod/v4";
-import { type ResolvedTecidoConfig, type TecidoConfig, parseConfig } from "../../config.js";
-import { withRuntimeContext } from "../../runtime-context.js";
-import type { RuntimePort } from "../../runtime.js";
-import { createThreadClient } from "../../thread-client.js";
-import type { CellState } from "./contracts.js";
-import { Address, Event } from "./schema.js";
+import { type ResolvedTecidoConfig, type TecidoConfig, parseConfig } from "../config.js";
+import { withRuntimeContext } from "../runtime-context.js";
+import type { RuntimePort } from "../runtime.js";
+import { createThreadClient } from "../thread-client.js";
+import type { RuntimeObjectState } from "./contracts.js";
+import { Address, Event } from "./protocol.js";
 
 const Occurrence = z.object({
   agentId: z.string().min(1),
@@ -26,14 +26,14 @@ const Journal = z.object({
 
 const KEY = "tecido.occurrence.v1";
 
-/** Each occurrence has its own Cell, so awaiting a Thread cannot block another hook. */
-export class SchedulerCell {
+/** Each occurrence has its own durable object, so awaiting a Thread cannot block another hook. */
+export class ScheduleObject {
   private draining = false;
 
   private readonly config: ResolvedTecidoConfig;
 
   constructor(
-    private readonly cell: CellState,
+    private readonly object: RuntimeObjectState,
     config: TecidoConfig,
     private readonly port: RuntimePort,
     private readonly revision: string,
@@ -60,7 +60,7 @@ export class SchedulerCell {
     if (!declaration?.options.schedules?.some((schedule) => schedule.id === occurrence.data.scheduleId))
       return Response.json({ error: "SCHEDULE_NOT_FOUND" }, { status: 400 });
 
-    await this.cell.storage.transaction(async (tx) => {
+    await this.object.storage.transaction(async (tx) => {
       const prior = await tx.get<unknown>(KEY);
       if (prior !== undefined) {
         Journal.parse(prior);
@@ -85,7 +85,7 @@ export class SchedulerCell {
   }
 
   private async drain(): Promise<void> {
-    const journal = await this.cell.storage.transaction(async (tx) => {
+    const journal = await this.object.storage.transaction(async (tx) => {
       const value = Journal.parse(await tx.get<unknown>(KEY));
       if (value.status === "completed" || value.status === "failed") {
         if (value.expiresAt !== undefined && value.expiresAt <= Date.now()) {
@@ -132,7 +132,7 @@ export class SchedulerCell {
           occurrenceId: occurrence.occurrenceId,
           scheduledAt: occurrence.scheduledAt,
         };
-        await this.cell.storage.transaction(async (tx) => {
+        await this.object.storage.transaction(async (tx) => {
           const state = Journal.parse(await tx.get<unknown>(KEY));
           const prior = state.operations.find((operation) => operation.event.eventId === event.eventId);
           if (prior && JSON.stringify(prior.event) !== JSON.stringify(event)) throw new Error("IDEMPOTENCY_CONFLICT");
@@ -167,14 +167,14 @@ export class SchedulerCell {
           },
         ),
       );
-      await this.cell.storage.transaction(async (tx) => {
+      await this.object.storage.transaction(async (tx) => {
         const state = Journal.parse(await tx.get<unknown>(KEY));
         const expiresAt = Date.now() + this.config.retention.cronJournalMs;
         await tx.put(KEY, { ...state, status: "completed", expiresAt });
         await tx.setAlarm(expiresAt);
       });
     } catch (failure) {
-      await this.cell.storage.transaction(async (tx) => {
+      await this.object.storage.transaction(async (tx) => {
         const state = Journal.parse(await tx.get<unknown>(KEY));
         const permanent = failure instanceof Error && failure.message === "IDEMPOTENCY_CONFLICT";
         const terminal = permanent || state.attempt >= 3;

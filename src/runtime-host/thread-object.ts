@@ -1,13 +1,14 @@
 import { type ModelMessage, tool as aiTool, streamText } from "ai";
 import { z } from "zod/v4";
-import type { AgentOptions } from "../../agent.js";
-import { type ResolvedTecidoConfig, type TecidoConfig, parseConfig } from "../../config.js";
-import type { LanguageModel, ModelUsage } from "../../model.js";
-import { runtimeEnv } from "../../runtime-context.js";
-import type { Tool } from "../../tool.js";
+import type { AgentOptions } from "../agent.js";
+import { type ResolvedTecidoConfig, type TecidoConfig, parseConfig } from "../config.js";
+import type { LanguageModel, ModelUsage } from "../model.js";
+import { runtimeEnv } from "../runtime-context.js";
+import type { Tool } from "../tool.js";
 import { awaitWithSignal } from "./abort.js";
-import type { CellState } from "./contracts.js";
-import { Command, Retry, State, type StoredRun, type StoredState } from "./schema.js";
+import type { RuntimeObjectState } from "./contracts.js";
+import { Command, Retry } from "./protocol.js";
+import { State, type StoredRun, type StoredState } from "./state-schema.js";
 
 const KEY = "tecido.thread.v1";
 
@@ -21,8 +22,8 @@ type ModelStreamPart = { type: string; text?: string };
 type StoredToolCall = StoredRun["calls"][number];
 type RetryResolution = z.infer<typeof Retry>["reconcile"];
 
-/** One Cell owns a Thread. Every transition and its recovery alarm commit together. */
-export class ThreadCell {
+/** One durable object owns a Thread. Every transition and its recovery alarm commit together. */
+export class ThreadObject {
   private active: { runId: string; controller: AbortController } | undefined;
   private recovering = true;
   private draining = false;
@@ -30,7 +31,7 @@ export class ThreadCell {
   private readonly config: ResolvedTecidoConfig;
 
   constructor(
-    private readonly cell: CellState,
+    private readonly object: RuntimeObjectState,
     config: TecidoConfig,
     private readonly revision = "unknown",
   ) {
@@ -41,7 +42,7 @@ export class ThreadCell {
     transition: (state: StoredState | undefined) => { state: StoredState; value: Value },
     arm = true,
   ): Promise<Value> {
-    return this.cell.storage.transaction(async (tx) => {
+    return this.object.storage.transaction(async (tx) => {
       const raw = await tx.get<unknown>(KEY);
       const state = raw === undefined ? undefined : State.parse(raw);
       const next = transition(state);
@@ -72,7 +73,7 @@ export class ThreadCell {
       if (arm) {
         if (next.state.runs.some((run) => !terminal(run))) {
           const deadline = await tx.getAlarm();
-          // Celld may expose the currently firing alarm here; it cannot cover the next wake.
+          // A currently firing alarm cannot cover the next required wake.
           if (deadline === null || deadline <= Date.now() || deadline > Date.now() + 1000)
             await tx.setAlarm(Date.now() + 1000);
         } else await tx.deleteAlarm();

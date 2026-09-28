@@ -1,28 +1,8 @@
-/** Celld adapter contracts targeting celld 0.6.0. */
-export interface StorageTransaction {
-  get<Value>(key: string): Promise<Value | undefined>;
-  put<Value>(key: string, value: Value): Promise<void>;
-  delete?(key: string): Promise<void>;
-  setAlarm(time: number): Promise<void>;
-  getAlarm(): Promise<number | null>;
-  deleteAlarm(): Promise<void>;
-}
+import type { RuntimeObjectNamespace } from "../../runtime-host/contracts.js";
 
-export interface CellStorage extends StorageTransaction {
-  transaction<Value>(operation: (transaction: StorageTransaction) => Promise<Value>): Promise<Value>;
-}
-
-export interface CellState {
-  readonly storage: CellStorage;
-}
-
-export interface CellNamespace {
-  idFromName(name: string): unknown;
-  get(id: unknown): { fetch(request: Request): Promise<Response> };
-}
-
+/** Celld 0.6.0 bindings consumed by its host adapter. */
 export interface HostEnv {
-  readonly TECIDO_THREADS: CellNamespace;
-  readonly TECIDO_SCHEDULES: CellNamespace;
+  readonly TECIDO_THREADS: RuntimeObjectNamespace;
+  readonly TECIDO_SCHEDULES: RuntimeObjectNamespace;
   readonly [name: string]: unknown;
 }
