@@ -17,13 +17,13 @@
   },
   "devDependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "@types/node": "^26.6.2",
-    "ai": "^7.0.0",
+    "@types/node": "^26.6.3",
+    "ai": "^7.0.126",
     "esbuild": "^0.28.2",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.1",
-    "oxfmt": "^0.70.0",
-    "oxlint": "^1.85.0",
+    "lint-staged": "^17.6.0",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
     "remeda": "^2.50.0",
     "ts-pattern": "^5.9.0",
     "typescript": "^7.0.2",
@@ -31,7 +31,7 @@
   },
   "peerDependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "ai": "^7.0.0"
+    "ai": "^7.0.126"
   },
   "lint-staged": {
     "**/*.ts": [
